@@ -375,8 +375,8 @@ def test_status_checks_cannot_be_required_by_name_only(tmp_path):
         policy_module.load(path)
 
 
-@pytest.mark.parametrize("value", [0, -1, "1", True, None])
-def test_a_policy_that_lowers_the_approval_requirement_is_refused(tmp_path, value):
+@pytest.mark.parametrize("value", [-1, "1", "0", 0.0, 1.5, True, False, None])
+def test_a_policy_whose_approval_requirement_is_not_a_non_negative_integer_is_refused(tmp_path, value):
     document = policy_document()
     document["governance"]["required_approvals"] = value
     path = tmp_path / "p.json"
@@ -385,7 +385,9 @@ def test_a_policy_that_lowers_the_approval_requirement_is_refused(tmp_path, valu
         policy_module.load(path)
 
 
-@pytest.mark.parametrize("flag", ["require_dismiss_stale_reviews", "require_empty_bypass"])
+@pytest.mark.parametrize(
+    "flag", ["require_last_push_approval", "require_dismiss_stale_reviews", "require_empty_bypass"]
+)
 @pytest.mark.parametrize("value", ["yes", 1, None])
 def test_a_malformed_governance_flag_is_refused(tmp_path, flag, value):
     document = policy_document()

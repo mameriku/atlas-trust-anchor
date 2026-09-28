@@ -164,9 +164,11 @@ def _check_rules(
             "dismiss_stale_reviews_on_push"
         ):
             problems.append("stale approvals are not dismissed when new commits are pushed")
-        if parameters.get("require_last_push_approval") is not True:
+        if required["require_last_push_approval"] and parameters.get(
+            "require_last_push_approval"
+        ) is not True:
             problems.append(
-                "the last pusher may approve their own change; a second reviewer is not required"
+                "the last pusher may approve their own change; policy requires that they cannot"
             )
 
     integration = required["required_status_check_integration_id"]

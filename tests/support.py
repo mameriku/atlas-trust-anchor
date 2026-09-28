@@ -127,6 +127,7 @@ def policy_document(floor: list[str] | None = None, **overrides: object) -> dict
             "required_ref": "refs/heads/main",
             "required_rules": ["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
             "required_approvals": 1,
+            "require_last_push_approval": True,
             "require_dismiss_stale_reviews": True,
             "require_empty_bypass": True,
             "required_status_checks": ["test"],

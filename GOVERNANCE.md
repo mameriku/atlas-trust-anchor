@@ -47,9 +47,9 @@ A ruleset on the default branch (`main`), applied from
 | restrict deletions | on |
 | block force pushes | on |
 | require a pull request before merging | on |
-| required approvals | **at least 1**, from someone who is not the last pusher |
+| required approvals | **0**: a pull request is still required, but nobody has to approve it (see *Single operator*) |
 | dismiss stale approvals on new commits | on |
-| require last-push approval | on |
+| require last-push approval | **off**: a lone operator has no second party to be |
 | require conversation resolution | on |
 | require status checks to pass | on, up to date with the base branch: the check named `test`, **from the GitHub Actions integration (id 15368)** - a check identified by name alone can be satisfied by anyone who can post a commit status |
 | bypass list | **empty**, and readable by the token that checks it |
@@ -57,19 +57,40 @@ A ruleset on the default branch (`main`), applied from
 The ruleset must cover the default branch, which contains `.github/workflows/**`
 and `anchor/**`.
 
-### The one thing that needs a second person
+### Single operator
 
-Requiring one approval **from someone who did not push the change** cannot be met
-by a repository with a single collaborator: GitHub does not let an author approve
-their own pull request, and the bypass list must stay empty. This requirement is
-**not** lowered to fit. The free prerequisite is:
+This repository is run by one person. **No second GitHub account is required**, none should be
+created for the purpose, and nothing in the ruleset asks for one. `required_approving_review_count`
+is `0` and `require_last_push_approval` is off. GitHub still refuses every change to `main` that
+does not arrive as a pull request whose `test` check passed on the exact tree being merged, and it
+refuses force pushes, deletion and bypass. It just does not ask anyone to approve.
 
-> **A second GitHub account with Write access to this repository, whose approval is
-> the required review.** Collaborators on a public repository are free.
+**Accepted residual risk.** Under the earlier design a second, separately accountable account had to
+approve every change to the judge, so no single credential could change it. That property is given
+up, by the operator's decision, and this document does not claim it is kept. The anchor is now
+exactly as strong as the operator's account: whoever holds that account can change `anchor/**`,
+`anchor/policy.json` or `.github/workflows/**` through a pull request they merge themselves, and a
+passing `test` check on their own edited tests shows only that their own tests pass. A merged change
+to the judge is not prevented. It is made visible.
 
-Until that account exists, `main` can be created (bootstrap step 1) but no later
-change to `anchor/**` or `.github/workflows/**` can be merged, which is the intended
-failure mode: an unreviewable judge stays as it was.
+What still holds, mechanically:
+
+* `main` changes only through a pull request; force pushes and deletion are blocked, the bypass
+  list is empty and readable, and the ruleset applies to administrators;
+* the required check is `test`, from the GitHub Actions integration, up to date with the base
+  branch, and secretless by construction; the ruleset also requires conversation resolution (the
+  gate does not check that one);
+* the credential is an environment secret released to `main` only, with administrator bypass off,
+  and a run starts only for the actors policy names;
+* every run first observes the ruleset and the environment, and refuses if governance cannot be read
+  or is weaker than `anchor/policy.json` requires. Policy is part of the tree, so this catches a ruleset
+  weakened behind the repository's back, not a policy weakened by a merged pull request;
+* every verdict records the digest of the policy and of the verifier code that produced it, so a
+  changed judge shows up in the record. A reader who relies on an ACCEPT should compare those digests
+  with a tree that has independent technical review evidence; nothing in this repository enforces
+  that comparison.
+
+Independent technical review is unchanged, and separate from all of this (next section).
 
 ### Change control is not independent review
 
@@ -77,27 +98,23 @@ Two different things are easy to conflate, and this document keeps them apart:
 
 | | what it is | who enforces it | what it proves |
 |---|---|---|---|
-| **Ruleset approval** | change control: who may merge into `main` | GitHub, mechanically | that some account other than the last pusher approved |
+| **Ruleset (change control)** | how a change reaches `main` | GitHub, mechanically | that it arrived as a pull request whose required check passed; not that anyone approved it |
 | **Independent review evidence** | a technical review by someone who did not author the change | a recorded review (SkillOS independent-review record, ADR-0004) | that a genuinely independent reviewer examined these exact bytes |
 
-GitHub cannot tell whether two accounts belong to one person, so the ruleset alone
-cannot establish independence, and it is not asked to. Consequently:
+GitHub's approval count is not used as a proxy for independent review, and the ruleset is not
+asked to establish it. Consequently:
 
-* A second account controlled by the **same person** satisfies the ruleset
-  *mechanically* and is **not independent review evidence**. It must not be created for
-  that purpose, must not be recorded as independent review, and nothing in this
-  repository recommends one.
-* The requirement is not lowered. If no genuinely independent human collaborator
-  exists, N2 stays **BLOCKED**; the ruleset is not weakened, and a same-person account is
-  not accepted as the resolution.
+* A second account controlled by the **same person** is **not independent review evidence**. It
+  must not be created for that purpose, must not be recorded as independent review, and nothing in
+  this repository recommends one.
+* The operator merging their own pull request is change control at most.
+  It is never recorded as independent review evidence.
 * Independent technical review remains separate evidence bound to a candidate commit and
   tree. Its reviewer class is recorded honestly - a fresh model reviewer with no
   authorship of the change is *independent of the author* but is not a human, and is
   recorded as exactly that. The two review rounds of the initial candidate were of that
   class; they are evidence about the bytes, not an approval of them.
-* What only a human can give, and the ruleset requires, is **approval as change
-  control**: an accountable person other than the pusher accepting the change into the
-  trust root.
+
 
 A non-empty bypass list is not automatically wrong, but it is an exception and must
 be recorded here with who holds it and why. There is no such exception today.
@@ -116,8 +133,9 @@ pushed, once, and everything after is verified against what that review establis
    repository's history is a single parentless root commit that carries it: nothing
    earlier is pushed with it.
    Nothing is protected yet, and the governance check refuses until steps 3–5 have
-   put the ruleset, the environment and the credential in place.
-3. **Add the second collaborator** (§2), then **apply the ruleset**:
+   put the ruleset, the environment and the credential in place. Until step 3 the branch
+   takes ordinary pushes; after it, every change is a pull request.
+3. **Apply the ruleset** (no second collaborator or account is needed):
 
    ```
    gh api -X POST repos/mameriku/atlas-trust-anchor/rulesets --input governance/ruleset-main.json
@@ -210,8 +228,8 @@ That case refuses, and is the most likely reason a first run wants this token.
 observation it records still establishes all of:
 
 * repository id **and** name, visibility `public`, default branch `main`
-* deletion and force-push blocked; a pull request required with ≥ 1 approval
-  **from someone other than the last pusher**, stale approvals dismissed; the `test`
+* deletion and force-push blocked; a pull request required, with the approval count and
+  last-push rule that policy names (0 and off for this single operator), stale approvals dismissed; the `test`
   status check required, from the GitHub Actions integration, and up to date
 * the values RECORDED are what GitHub reported (the weakest pull-request rule in force,
   the `private` flag as returned), not policy's own numbers copied back - so the
@@ -328,8 +346,8 @@ edited the workflow to skip its own gate.
 
 ## 9. Updating the anchor
 
-Changes to `anchor/**` and `.github/workflows/**` go through a pull request with an
-independent approval, and the `test` check must pass. There is no dispatch input that
+Changes to `anchor/**` and `.github/workflows/**` go through a pull request, and the
+`test` check must pass. No approval is required (§2, *Single operator*). There is no dispatch input that
 selects an evaluator revision, and there must never be one: the evaluator is whatever
 is on the protected branch at the moment GitHub resolves the workflow, and the
 identity gate refuses any run where that is not true.

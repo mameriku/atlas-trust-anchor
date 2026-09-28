@@ -708,12 +708,15 @@ def test_the_ruleset_the_bootstrap_applies_is_exactly_what_policy_requires():
     assert RULESET["bypass_actors"] == [], "the bypass list must be empty"
 
 
-def test_the_ruleset_requires_review_from_someone_who_did_not_push():
+def test_the_ruleset_keeps_the_pull_request_rule_with_the_single_operator_values():
     parameters = ruleset_rule("pull_request")["parameters"]
-    assert parameters["required_approving_review_count"] >= SHIPPED["governance"]["required_approvals"]
+    governance = SHIPPED["governance"]
+    assert parameters["required_approving_review_count"] == governance["required_approvals"] == 0
+    assert parameters["require_last_push_approval"] is False
+    assert governance["require_last_push_approval"] is False
     assert parameters["dismiss_stale_reviews_on_push"] is True
-    assert parameters["require_last_push_approval"] is True
     assert parameters["required_review_thread_resolution"] is True
+    assert parameters["require_code_owner_review"] is False
 
 
 def test_the_ruleset_requires_exactly_the_status_check_policy_names():
@@ -729,9 +732,14 @@ def test_the_governance_document_asks_for_nothing_paid():
     assert "GitHub Free" in text
 
 
-def test_the_governance_document_states_the_one_free_prerequisite_instead_of_lowering_the_review():
+def test_the_governance_document_needs_no_second_account_and_states_what_that_gives_up():
     text = (ROOT / "GOVERNANCE.md").read_text(encoding="utf-8")
-    assert "second GitHub account" in text and "not** lowered" in text
+    assert "Single operator" in text
+    assert "No second GitHub account is required" in text
+    assert "Accepted residual risk" in text
+    assert "as strong as the operator's account" in text
+    assert "second GitHub account with Write access" not in text
+    assert "Add the second collaborator" not in text
 
 
 def test_the_bootstrap_commands_in_the_governance_document_exist_in_the_repository():
@@ -918,8 +926,8 @@ def test_the_governance_document_keeps_change_control_apart_from_independent_rev
         "Change control is not independent review",
         "same person",
         "not independent review evidence",
-        "N2 stays **BLOCKED**",
+        "never recorded as independent review",
         "fresh model reviewer",
     ):
         assert phrase in text, phrase
-    assert "not** lowered" in text or "is not lowered" in text
+    assert "N2 stays **BLOCKED**" not in text

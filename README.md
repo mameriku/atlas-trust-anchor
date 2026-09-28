@@ -150,9 +150,9 @@ the absence of a root, but a root that can be pointed at and defended.
 The settings that make this repository a trust root — the ruleset, review, an empty
 and *readable* bypass list, the environment that releases the credential, the
 read-only deploy key, the bootstrap order — are in [GOVERNANCE.md](GOVERNANCE.md).
-Everything in it is available on GitHub Free. The one thing it asks for that a
-single-person repository cannot supply is a second collaborator to give the required
-review; that requirement is stated rather than lowered.
+Everything in it is available on GitHub Free, and it is written for one operator: no
+second account is required. What that gives up - no second party approves a change to
+the judge - is stated in GOVERNANCE.md, not hidden.
 
 Until `anchor/policy.json` names this repository's numeric id, every entry point
 refuses. That is deliberate: an anchor that does not know its own identity cannot
