@@ -126,7 +126,10 @@ def test_the_container_command_forwards_no_environment_at_all(leaky_run):
 
 def test_the_child_environment_holds_a_path_and_nothing_else(leaky_run):
     seen = _visible(leaky_run)["environment"]
-    assert set(seen) <= {"PATH", "SYSTEMROOT", "WINDIR", "FAKE_MOUNTS"}, sorted(seen)
+    # CPython itself adds LC_CTYPE at start-up on Linux when the locale is "C" (PEP 538).
+    # The anchor never sets it, and the check on secret values below covers it too.
+    assert set(seen) <= {"PATH", "SYSTEMROOT", "WINDIR", "FAKE_MOUNTS", "LC_CTYPE"}, sorted(seen)
+    assert seen.get("LC_CTYPE", "C.UTF-8") in {"C.UTF-8", "C.utf8", "UTF-8"}, seen.get("LC_CTYPE")
     for secret in SECRETS:
         assert all(secret not in value for value in seen.values())
 

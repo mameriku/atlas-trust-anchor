@@ -50,7 +50,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 UID = os.getuid() if hasattr(os, "getuid") and os.getuid() != 0 else 1000
-GID = os.getgid() if hasattr(os, "getgid") and os.getgid() != 0 else 1000
+# The anchor pins the gid (sandbox_spec.UNPRIVILEGED_GID): on a hosted runner the user's own
+# primary group can be `docker`. The harness must ask for exactly what production asks for.
+GID = sandbox_spec.UNPRIVILEGED_GID
 ALLOWED_IMAGE_ENV = {"PATH", "LANG", "GPG_KEY", "PYTHON_VERSION", "PYTHON_SHA256", "HOSTNAME", "HOME"}
 
 HOSTILE = r'''
@@ -171,7 +173,11 @@ def report(tmp_path_factory, pulled):
     line = next(text for text in process.stdout.splitlines() if text.startswith("HOSTILE_REPORT "))
     data = json.loads(line.split(" ", 1)[1])
     data["_evidence_dir"] = sorted(path.name for path in (base / "evidence").iterdir())
-    data["_candidate_dir"] = sorted(path.name for path in (base / "candidate").rglob("*") if path.is_file())
+    data["_candidate_dir"] = sorted(
+        path.relative_to(base / "candidate").as_posix()
+        for path in (base / "candidate").rglob("*")
+        if path.is_file()
+    )
     return data
 
 
