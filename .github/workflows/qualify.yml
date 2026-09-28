@@ -1,0 +1,253 @@
+name: Qualify an Atlas candidate
+
+# This repository is PUBLIC and the candidate is PRIVATE. Everything below follows
+# from one rule: no private byte ever crosses a public boundary.
+#
+#   qualify   one runner. Fetches the exact candidate with a read-only deploy key,
+#             freezes it, destroys the key, looks at the candidate inside a hardened
+#             container, verifies, and uploads ONLY an allow-listed public package.
+#             Private bytes exist here and nowhere else, and this runner is
+#             discarded.
+#   attest    a second runner that never sees a credential or a private byte. It
+#             checks the public package against the digest `qualify` published,
+#             and has GitHub sign the verdict.
+#
+# There is no artifact between the trusted phase and the sandbox, because there
+# is no second job to carry it to. The isolation the old job boundary provided
+# is a container boundary, and the console is kept clean the same way: nothing
+# the candidate produced is ever printed, only fixed codes and counts.
+#
+# The caller chooses a candidate commit and may WIDEN the scope. It cannot choose
+# the repository, the evaluator revision, the sandbox, or a scope under the floor.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character Atlas commit SHA to qualify
+        required: true
+        type: string
+      inputs_manifest:
+        description: Newline-separated extra candidate paths (the policy floor is always added)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-qualification
+  cancel-in-progress: false
+
+env:
+  # -I ignores PYTHONPATH and the user site directory, -S keeps sitecustomize
+  # out, -B keeps a planted __pycache__ entry from being loaded. Every trusted
+  # script asserts these flags at start and refuses if they are missing.
+  PY: python3 -I -S -B
+
+jobs:
+  qualify:
+    name: Qualify (private bytes stay on this runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The environment releases its secrets to the default branch only. A workflow
+    # on any other ref is stopped before it has a step to run, so the deploy key
+    # is not reachable by a branch that edited this file to skip the gate below.
+    environment: atlas-qualification
+    outputs:
+      public_digest: ${{ steps.audit.outputs.public_digest }}
+    steps:
+      - name: Check out the trust anchor
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          path: anchor
+          persist-credentials: false
+
+      # Before the deploy key is used for anything at all. The governance token
+      # is not the target credential: the deploy key cannot speak to the GitHub
+      # API, and this token can only read this repository's administration.
+      - name: Identity and governance gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ANCHOR_GOVERNANCE_TOKEN: ${{ secrets.ANCHOR_GOVERNANCE_TOKEN }}
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/anchor-private"
+          $PY anchor/anchor/gate.py \
+            --policy anchor/anchor/policy.json \
+            --observation-out "$RUNNER_TEMP/anchor-private/governance.json"
+
+      - name: Lint the workflows this run is executing
+        run: $PY anchor/anchor/pinlint.py anchor/.github/workflows
+
+      # The exact evaluator bytes that ran, bound by digest into the package. If
+      # this repository stops being protected its history can be rewritten, and
+      # a verdict naming a commit nobody can fetch proves nothing. This tree is
+      # the anchor's own, which is public; it is not the candidate.
+      - name: Archive the anchor tree at this commit
+        working-directory: anchor
+        run: |
+          mkdir -p ../public
+          git archive --format=tar -o ../public/anchor-tree.tar HEAD
+
+      # The only step that holds the deploy key, and it holds it as one step's
+      # environment variable, not a job's. capture.py writes it to a 0600 file for
+      # the length of one `git fetch`, overwrites it, and removes it before doing
+      # anything else. No candidate code runs here.
+      - name: Fetch and freeze the candidate
+        id: capture
+        env:
+          ATLAS_DEPLOY_KEY: ${{ secrets.ATLAS_DEPLOY_KEY }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          INPUTS_MANIFEST: ${{ inputs.inputs_manifest }}
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/anchor-private/fetch" "$RUNNER_TEMP/anchor-sandbox"
+          $PY anchor/anchor/capture.py \
+            --policy anchor/anchor/policy.json \
+            --governance "$RUNNER_TEMP/anchor-private/governance.json" \
+            --candidate="$CANDIDATE_SHA" \
+            --inputs-manifest="$INPUTS_MANIFEST" \
+            --workdir "$RUNNER_TEMP/anchor-private/fetch" \
+            --scope-dir "$RUNNER_TEMP/anchor-sandbox/candidate" \
+            --capture "$RUNNER_TEMP/anchor-private/capture.json"
+
+      # No credential in this step's environment, and none on disk. The
+      # container gets a read-only copy of the frozen scope, three anchor files,
+      # and one writable evidence directory. Its output is counted and discarded.
+      - name: Look at the candidate in the sandbox
+        id: sandbox
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          INPUTS_MANIFEST: ${{ inputs.inputs_manifest }}
+        run: |
+          $PY anchor/anchor/sandbox.py \
+            --policy anchor/anchor/policy.json \
+            --anchor-code anchor/anchor \
+            --capture "$RUNNER_TEMP/anchor-private/capture.json" \
+            --candidate="$CANDIDATE_SHA" \
+            --inputs-manifest="$INPUTS_MANIFEST" \
+            --scope-dir "$RUNNER_TEMP/anchor-sandbox/candidate" \
+            --child-dir "$RUNNER_TEMP/anchor-sandbox/child" \
+            --evidence-dir "$RUNNER_TEMP/anchor-sandbox/evidence" \
+            --record "$RUNNER_TEMP/anchor-private/sandbox.json" \
+            --name "atlas-anchor-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      # No continue-on-error anywhere: a failed step stays failed, and the
+      # verifier refuses any run whose sandbox record is not a clean, hardened one.
+      - name: Verify
+        id: verify
+        if: always()
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          INPUTS_MANIFEST: ${{ inputs.inputs_manifest }}
+          CAPTURE_DIGEST: ${{ steps.capture.outputs.capture_digest }}
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+        run: |
+          mkdir -p public
+          $PY anchor/anchor/verify.py \
+            --policy anchor/anchor/policy.json \
+            --candidate="$CANDIDATE_SHA" \
+            --inputs-manifest="$INPUTS_MANIFEST" \
+            --capture "$RUNNER_TEMP/anchor-private/capture.json" \
+            --capture-digest="$CAPTURE_DIGEST" \
+            --capture-result="$CAPTURE_OUTCOME" \
+            --sandbox-record "$RUNNER_TEMP/anchor-private/sandbox.json" \
+            --scope-dir "$RUNNER_TEMP/anchor-sandbox/candidate" \
+            --evidence-dir "$RUNNER_TEMP/anchor-sandbox/evidence" \
+            --verdict public/verdict.json \
+            --public-capture public/public-capture.json
+
+      - name: Seal the evidence package
+        if: always()
+        run: |
+          cp anchor/anchor/policy.json public/policy.json
+          $PY anchor/anchor/preserve.py build \
+            --verdict public/verdict.json \
+            --public-capture public/public-capture.json \
+            --policy public/policy.json \
+            --anchor-archive public/anchor-tree.tar \
+            --out public/evidence.json
+          $PY anchor/anchor/preserve.py check --package public
+
+      # The door. Exactly the allow-listed files with exactly the allow-listed
+      # keys, and none of the private files just exported - nor any long line of
+      # them - inside any of it. Nothing is uploaded unless this step succeeds.
+      - name: Audit what is about to be public
+        id: audit
+        if: always()
+        run: |
+          $PY anchor/anchor/publish.py audit \
+            --public-dir public \
+            --private-dir "$RUNNER_TEMP/anchor-sandbox/candidate" \
+            --capture "$RUNNER_TEMP/anchor-private/capture.json" \
+            --policy anchor/anchor/policy.json
+
+      - name: Upload the public package
+        if: always() && steps.audit.outcome == 'success'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: public/
+          if-no-files-found: error
+
+      - name: Scrub the private workspace
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/anchor-private" "$RUNNER_TEMP/anchor-sandbox"
+
+  attest:
+    name: Attest the sanitized verdict (no credential, no private bytes)
+    needs: qualify
+    if: always() && needs.qualify.outputs.public_digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the trust anchor
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          path: anchor
+          persist-credentials: false
+
+      - name: Identity gate
+        run: $PY anchor/anchor/gate.py --policy anchor/anchor/policy.json --identity-only
+
+      - name: Download the public package
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: public
+
+      # The digest was published by the job that produced the package. No other
+      # job can write it, so an artifact replaced under the same name fails here.
+      - name: Check the package against the published digest
+        env:
+          PUBLIC_DIGEST: ${{ needs.qualify.outputs.public_digest }}
+        run: |
+          $PY anchor/anchor/publish.py check-digest --public-dir public --digest "$PUBLIC_DIGEST"
+          $PY anchor/anchor/preserve.py check --package public
+
+      # Bound to the verdict alone. The candidate's bytes are not in this job and
+      # are not attested.
+      - name: Attest the verdict
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: public/verdict.json
+
+      - name: Collect the attestation bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          mkdir -p attestation
+          cp public/verdict.json attestation/verdict.json
+          cp "$BUNDLE_PATH" attestation/attestation.jsonl
+
+      - name: Upload the attestation
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: attestation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: attestation/
+          if-no-files-found: error

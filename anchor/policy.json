@@ -1,0 +1,76 @@
+{
+  "policy_version": "atlas-anchor-policy/2",
+  "anchor": {
+    "repository": "mameriku/atlas-trust-anchor",
+    "repository_id": 1392950051,
+    "workflow_ref": "mameriku/atlas-trust-anchor/.github/workflows/qualify.yml@refs/heads/main",
+    "ref": "refs/heads/main",
+    "visibility": "public"
+  },
+  "target": {
+    "repository": "mameriku/atlas",
+    "repository_id": 1311516591,
+    "visibility": "private"
+  },
+  "trigger": {
+    "event": "workflow_dispatch",
+    "actors": [
+      "mameriku"
+    ]
+  },
+  "credential": {
+    "kind": "deploy-key",
+    "environment": "atlas-qualification",
+    "secret": "ATLAS_DEPLOY_KEY",
+    "host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+  },
+  "sandbox": {
+    "image": "python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e",
+    "timeout_seconds": 120,
+    "memory_mb": 512,
+    "cpus": 1,
+    "pids_limit": 128,
+    "max_output_bytes": 65536,
+    "max_file_bytes": 4194304,
+    "tmpfs_mb": 16
+  },
+  "required_inputs_floor": [
+    "scripts/release_qualification_contract.py",
+    "scripts/release_qualification_language.py"
+  ],
+  "limits": {
+    "max_evidence_bytes": 4194304,
+    "max_observations": 512,
+    "max_input_bytes": 8388608
+  },
+  "disclosure": {
+    "private_transport": "none",
+    "publish_floor_digests": true
+  },
+  "governance": {
+    "required_ref": "refs/heads/main",
+    "required_rules": [
+      "deletion",
+      "non_fast_forward",
+      "pull_request",
+      "required_status_checks"
+    ],
+    "required_approvals": 1,
+    "require_dismiss_stale_reviews": true,
+    "require_empty_bypass": true,
+    "required_status_checks": [
+      "test"
+    ],
+    "environment": {
+      "name": "atlas-qualification",
+      "deployment_branches": [
+        "main"
+      ],
+      "environment_only_secrets": [
+        "ATLAS_DEPLOY_KEY",
+        "ANCHOR_GOVERNANCE_TOKEN"
+      ]
+    },
+    "required_status_check_integration_id": 15368
+  }
+}
