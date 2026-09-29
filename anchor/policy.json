@@ -35,8 +35,7 @@
     "tmpfs_mb": 16
   },
   "required_inputs_floor": [
-    "scripts/release_qualification_contract.py",
-    "scripts/release_qualification_language.py"
+    "pyproject.toml"
   ],
   "limits": {
     "max_evidence_bytes": 4194304,

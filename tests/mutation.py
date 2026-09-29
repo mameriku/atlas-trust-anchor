@@ -271,6 +271,7 @@ CATALOG: list[Mutant] = [
     m("policy/shipped-approvals", "anchor/policy.json", '"required_approvals": 0,', '"required_approvals": 1,'),
     m("policy/shipped-last-push", "anchor/policy.json", '"require_last_push_approval": false,', '"require_last_push_approval": true,'),
     m("policy/shipped-thread-resolution", "anchor/policy.json", '"require_review_thread_resolution": true,', '"require_review_thread_resolution": false,'),
+    m("policy/shipped-floor", "anchor/policy.json", '"pyproject.toml"', '"pyproject.tomlx"'),
     m("policy/shipped-pull-request-rule", "anchor/policy.json", '"pull_request",', '"pull_request_dropped",'),
     m("ruleset/pull-request-rule", "governance/ruleset-main.json", '"type": "pull_request",', '"type": "pull_request_disabled",'),
     m("ruleset/deletion-rule", "governance/ruleset-main.json", '"type": "deletion"', '"type": "deletion_disabled"'),
