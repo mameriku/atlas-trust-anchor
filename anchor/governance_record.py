@@ -69,6 +69,10 @@ def acceptable(observation: Any, policy: Mapping[str, Any]) -> list[str]:
         reasons.append("GOVERNANCE_STALE_REVIEWS")
     if required["require_last_push_approval"] and observation.get("last_push_approval") is not True:
         reasons.append("GOVERNANCE_LAST_PUSH")
+    if required["require_review_thread_resolution"] and observation.get(
+        "review_thread_resolution_required"
+    ) is not True:
+        reasons.append("GOVERNANCE_REVIEW_THREAD_RESOLUTION")
     if observation.get("strict_status_checks") is not True:
         reasons.append("GOVERNANCE_STRICT_CHECKS")
     if observation.get("credential_only_in_environment") is not True:

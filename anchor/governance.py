@@ -170,6 +170,12 @@ def _check_rules(
             problems.append(
                 "the last pusher may approve their own change; policy requires that they cannot"
             )
+        if required["require_review_thread_resolution"] and parameters.get(
+            "required_review_thread_resolution"
+        ) is not True:
+            problems.append(
+                "a pull request can merge with open review threads; policy requires them resolved"
+            )
 
     integration = required["required_status_check_integration_id"]
     contexts = _status_check_contexts(index, integration)
@@ -187,11 +193,13 @@ def _check_rules(
 
 def _pull_request_facts(
     index: dict[str, list[dict[str, Any]]],
-) -> tuple[int | None, bool, bool]:
-    """The weakest pull-request rule in force: fewest approvals, any lax stale or last-push rule."""
+) -> tuple[int | None, bool, bool, bool]:
+    """The weakest pull-request rule in force: fewest approvals, any lax stale, last-push or
+    thread-resolution rule."""
     counts: list[int] = []
     dismiss = True
     last_push = True
+    thread_resolution = True
     for rule in index.get("pull_request", []):
         parameters = rule.get("parameters") or {}
         count = parameters.get("required_approving_review_count")
@@ -200,8 +208,15 @@ def _pull_request_facts(
             dismiss = False
         if parameters.get("require_last_push_approval") is not True:
             last_push = False
+        if parameters.get("required_review_thread_resolution") is not True:
+            thread_resolution = False
     present = bool(counts)
-    return (min(counts) if counts else None), dismiss and present, last_push and present
+    return (
+        (min(counts) if counts else None),
+        dismiss and present,
+        last_push and present,
+        thread_resolution and present,
+    )
 
 
 def _status_check_contexts(index: dict[str, list[dict[str, Any]]], integration: int) -> list[str]:
@@ -450,7 +465,7 @@ def observe(
     if problems:
         raise PolicyError("; ".join(problems))
 
-    approvals, dismiss, last_push = _pull_request_facts(index)
+    approvals, dismiss, last_push, thread_resolution = _pull_request_facts(index)
     observation: dict[str, Any] = {
         "governance_version": GOVERNANCE_VERSION,
         "repository": repository,
@@ -466,6 +481,7 @@ def observe(
         "observed_approvals": approvals,
         "dismiss_stale_reviews": dismiss,
         "last_push_approval": last_push,
+        "review_thread_resolution_required": thread_resolution,
         "strict_status_checks": all(
             (rule.get("parameters") or {}).get("strict_required_status_checks_policy") is True
             for rule in index.get("required_status_checks", [])

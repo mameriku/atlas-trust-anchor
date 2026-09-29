@@ -229,8 +229,9 @@ observation it records still establishes all of:
 
 * repository id **and** name, visibility `public`, default branch `main`
 * deletion and force-push blocked; a pull request required, with the approval count and
-  last-push rule that policy names (0 and off for this single operator), stale approvals dismissed; the `test`
-  status check required, from the GitHub Actions integration, and up to date
+  last-push rule that policy names (0 and off for this single operator), stale approvals
+  dismissed, and review threads required resolved before merge; the `test` status check
+  required, from the GitHub Actions integration, and up to date
 * the values RECORDED are what GitHub reported (the weakest pull-request rule in force,
   the `private` flag as returned), not policy's own numbers copied back - so the
   verifier is never comparing policy with itself

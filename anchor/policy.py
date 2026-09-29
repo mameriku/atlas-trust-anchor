@@ -162,7 +162,12 @@ def _load_governance(raw: Mapping[str, Any]) -> None:
     approvals = governance.get("required_approvals")
     if isinstance(approvals, bool) or not isinstance(approvals, int) or approvals < 0:
         raise PolicyError("policy governance.required_approvals is not a non-negative integer")
-    for flag in ("require_last_push_approval", "require_dismiss_stale_reviews", "require_empty_bypass"):
+    for flag in (
+        "require_last_push_approval",
+        "require_review_thread_resolution",
+        "require_dismiss_stale_reviews",
+        "require_empty_bypass",
+    ):
         if not isinstance(governance.get(flag), bool):
             raise PolicyError(f"policy governance.{flag} is not a boolean")
     contexts = governance.get("required_status_checks")

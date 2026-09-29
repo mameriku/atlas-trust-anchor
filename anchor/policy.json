@@ -57,6 +57,7 @@
     ],
     "required_approvals": 0,
     "require_last_push_approval": false,
+    "require_review_thread_resolution": true,
     "require_dismiss_stale_reviews": true,
     "require_empty_bypass": true,
     "required_status_checks": [

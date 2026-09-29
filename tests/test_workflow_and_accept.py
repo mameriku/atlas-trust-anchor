@@ -716,6 +716,7 @@ def test_the_ruleset_keeps_the_pull_request_rule_with_the_single_operator_values
     assert governance["require_last_push_approval"] is False
     assert parameters["dismiss_stale_reviews_on_push"] is True
     assert parameters["required_review_thread_resolution"] is True
+    assert governance["require_review_thread_resolution"] is True
     assert parameters["require_code_owner_review"] is False
 
 

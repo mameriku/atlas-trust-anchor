@@ -386,7 +386,13 @@ def test_a_policy_whose_approval_requirement_is_not_a_non_negative_integer_is_re
 
 
 @pytest.mark.parametrize(
-    "flag", ["require_last_push_approval", "require_dismiss_stale_reviews", "require_empty_bypass"]
+    "flag",
+    [
+        "require_last_push_approval",
+        "require_review_thread_resolution",
+        "require_dismiss_stale_reviews",
+        "require_empty_bypass",
+    ],
 )
 @pytest.mark.parametrize("value", ["yes", 1, None])
 def test_a_malformed_governance_flag_is_refused(tmp_path, flag, value):
@@ -468,6 +474,7 @@ def base_answers():
                     "required_approving_review_count": 1,
                     "dismiss_stale_reviews_on_push": True,
                     "require_last_push_approval": True,
+                    "required_review_thread_resolution": True,
                 },
             },
             {
@@ -539,6 +546,7 @@ def test_a_protected_public_anchor_produces_a_bound_observation(tmp_path):
         "name": ENV, "deployment_branches": ["main"], "admins_can_bypass": False,
     }
     assert observation["observed_approvals"] == 1 and observation["last_push_approval"] is True
+    assert observation["review_thread_resolution_required"] is True
     assert observation["credential_only_in_environment"] is True
     assert observation["status_check_contexts"] == ["test"]
     assert sorted(observation["rules_in_force"]) == [
@@ -798,6 +806,8 @@ def test_a_run_with_no_observation_is_refused(tmp_path, observation):
         ({"dismiss_stale_reviews": False}, "GOVERNANCE_STALE_REVIEWS"),
         ({"last_push_approval": False}, "GOVERNANCE_LAST_PUSH"),
         ({"last_push_approval": None}, "GOVERNANCE_LAST_PUSH"),
+        ({"review_thread_resolution_required": False}, "GOVERNANCE_REVIEW_THREAD_RESOLUTION"),
+        ({"review_thread_resolution_required": None}, "GOVERNANCE_REVIEW_THREAD_RESOLUTION"),
         ({"strict_status_checks": False}, "GOVERNANCE_STRICT_CHECKS"),
         ({"credential_only_in_environment": False}, "GOVERNANCE_SECRET_SCOPE"),
         ({"credential_only_in_environment": "yes"}, "GOVERNANCE_SECRET_SCOPE"),
@@ -929,6 +939,17 @@ def test_a_pull_request_rule_that_lets_the_last_pusher_approve_is_a_refusal(tmp_
         rules(answers)[2]["parameters"]["require_last_push_approval"] = False
 
     refused(tmp_path, mutate, match="last pusher")
+
+
+@pytest.mark.parametrize("value", [False, None, "yes"])
+def test_a_pull_request_rule_that_does_not_require_thread_resolution_is_a_refusal(tmp_path, value):
+    def mutate(answers):
+        if value is None:
+            del rules(answers)[2]["parameters"]["required_review_thread_resolution"]
+        else:
+            rules(answers)[2]["parameters"]["required_review_thread_resolution"] = value
+
+    refused(tmp_path, mutate, match="open review threads")
 
 
 def test_status_checks_that_need_not_be_up_to_date_are_a_refusal(tmp_path):

@@ -90,6 +90,7 @@ def test_the_shipped_policy_is_the_single_operator_model_and_nothing_looser():
     governance = shipped_policy()["governance"]
     assert governance["required_approvals"] == 0 and type(governance["required_approvals"]) is int
     assert governance["require_last_push_approval"] is False
+    assert governance["require_review_thread_resolution"] is True
     assert governance["require_dismiss_stale_reviews"] is True
     assert governance["require_empty_bypass"] is True
     assert set(governance["required_rules"]) == REQUIRED_RULES
@@ -132,6 +133,7 @@ def test_the_gate_accepts_the_shipped_ruleset_and_records_what_github_reported()
     observation = observe_shipped()
     assert observation["observed_approvals"] == 0
     assert observation["last_push_approval"] is False
+    assert observation["review_thread_resolution_required"] is True
     assert observation["dismiss_stale_reviews"] is True
     assert observation["strict_status_checks"] is True
     assert observation["status_check_contexts"] == ["test"]
@@ -160,6 +162,50 @@ def test_a_last_push_rule_that_policy_does_not_require_is_not_required_of_github
 
     observation = observe_shipped(lax_or_strict)
     assert governance_record.acceptable(observation, shipped_policy()) == []
+
+
+@pytest.mark.parametrize("value", [False, None, "absent"])
+def test_a_ruleset_that_does_not_require_thread_resolution_is_a_refusal(value):
+    def mutate(answers):
+        parameters = pull_request(answers)["parameters"]
+        if value == "absent":
+            parameters.pop("required_review_thread_resolution", None)
+        else:
+            parameters["required_review_thread_resolution"] = value
+
+    with pytest.raises(PolicyError, match="open review threads"):
+        observe_shipped(mutate)
+
+
+@pytest.mark.parametrize("value", [True, None, "absent"])
+def test_a_thread_resolution_rule_that_policy_does_not_require_is_not_required_of_github(tmp_path, value):
+    """`require_review_thread_resolution` is a configurable policy flag like
+    `require_last_push_approval`, not a hard-coded constant, even though the shipped
+    policy always asks for it. A policy that turns it off must actually turn it off."""
+    document = json.loads(SHIPPED_POLICY.read_text(encoding="utf-8"))
+    document["governance"]["require_review_thread_resolution"] = False
+    path = tmp_path / "lax.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    lax = policy_module.load(path)
+
+    def lax_or_strict(answers):
+        parameters = pull_request(answers)["parameters"]
+        if value == "absent":
+            parameters.pop("required_review_thread_resolution", None)
+        else:
+            parameters["required_review_thread_resolution"] = value
+
+    observation = observe_shipped(lax_or_strict, policy=lax)
+    assert governance_record.acceptable(observation, lax) == []
+
+
+def test_a_recorded_thread_resolution_fact_that_is_not_true_is_refused():
+    policy = shipped_policy()
+    observation = governed_observation(
+        repository_id=policy["anchor"]["repository_id"],
+        review_thread_resolution_required=False,
+    )
+    assert "GOVERNANCE_REVIEW_THREAD_RESOLUTION" in governance_record.acceptable(observation, policy)
 
 
 # ==========================================================================
@@ -214,7 +260,11 @@ def test_the_weakest_pull_request_rule_in_force_is_the_one_recorded():
             {
                 "type": "pull_request",
                 "ruleset_id": 1,
-                "parameters": {"required_approving_review_count": 9, "dismiss_stale_reviews_on_push": True},
+                "parameters": {
+                    "required_approving_review_count": 9,
+                    "dismiss_stale_reviews_on_push": True,
+                    "required_review_thread_resolution": True,
+                },
             }
         )
 
