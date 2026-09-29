@@ -192,6 +192,17 @@ def test_the_shipped_policy_loads_and_is_valid_as_shipped():
     assert policy["credential"]["host_key"] == HOST_KEY
 
 
+def test_the_shipped_floor_is_real_and_stable_not_an_abandoned_harness_relic():
+    """No anchor code ever reads a floor file for what it means (runner.py only
+    computes its blob id and sha256); its one job is that `policy.py` refuses an
+    empty floor, so an ACCEPT is never bound to zero examined candidate bytes.
+    The floor once named two files from a retired self-verifying release harness
+    that no longer exist in the target repository - this pins the replacement so
+    that drift is a failing test, not a silent gap discovered during a live run."""
+    policy = policy_module.load(ANCHOR / "policy.json")
+    assert policy["required_inputs_floor"] == ["pyproject.toml"]
+
+
 def test_the_shipped_policy_accepts_its_own_repository_and_refuses_any_other_id():
     policy = policy_module.load(ANCHOR / "policy.json")
     own = good_environment(

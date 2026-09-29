@@ -268,8 +268,22 @@ private file - a PIN, a token, a flag - does not protect it, it *confirms* it: a
 review reproduced recovering `PIN=4821` from ten thousand guesses against a published
 digest. The same holds for any hash of a structure that *contains* that digest, which
 is why the freeze's own digest and the evidence file's digest are not published either.
-So only inputs the anchor's own public policy names (the floor, which is source code)
-are described by digest. An **extra input** a caller added to the manifest is described
+So only inputs the anchor's own public policy names (the floor) are described by digest.
+
+**What the floor is for, stated once so it is not rediscovered by accident.** No anchor
+code ever reads a scope file for what it means: `runner.py` computes a blob id and a
+sha256 and nothing else, and `verify.py` only ever compares those identities - freeze
+against sandbox observation, never content against expectation. The floor's one job is
+non-vacuousness: `policy.py` refuses to load a policy whose floor is empty, precisely so
+that an ACCEPT cannot be bound to zero examined candidate bytes. Its entries are chosen
+for being real and stable in the target repository, never for being an authority on the
+candidate's correctness - that disposition belongs to governance and to independent
+review, not to a path in this list. `anchor/policy.json` shipped for a time with two
+paths from an abandoned self-verifying release harness that no longer exist in
+`mameriku/atlas`; the fix was a data correction, not a design change, and this paragraph
+exists so the next one is a data correction too.
+
+An **extra input** a caller added to the manifest is described
 by nothing except that N were asked for: no path, no digest, and no separate
 found/absent count that would reveal whether a single path exists. (The verdict still
 says whether every input was present; that is what a verdict is for.) The public
