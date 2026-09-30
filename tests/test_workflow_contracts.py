@@ -80,6 +80,25 @@ def _flags_in(run_block: str) -> set[str]:
     return {token.split("=", 1)[0] for token in tokens if token.startswith("--")}
 
 
+def _flag_values_in(run_block: str) -> dict[str, str]:
+    """flag -> its literal value, for both `--flag=value` and `--flag value`.
+    A flag name matching at every call site is not enough on its own: the
+    fix here was one step's `--child-dir` missing entirely, but a later edit
+    could just as easily leave the flag in place and only change (or
+    typo) the path it points to, which `_flags_in` alone would never see."""
+    tokens = shlex.split(run_block.replace("\\\n", " "), posix=True)
+    values: dict[str, str] = {}
+    for index, token in enumerate(tokens):
+        if not token.startswith("--"):
+            continue
+        if "=" in token:
+            flag, _, value = token.partition("=")
+            values[flag] = value
+        elif index + 1 < len(tokens) and not tokens[index + 1].startswith("--"):
+            values[token] = tokens[index + 1]
+    return values
+
+
 # (script, subcommand, the substring in a `run:` block that identifies its call site)
 INVOCATIONS = [
     ("gate.py", None, "anchor/anchor/gate.py"),
@@ -120,3 +139,40 @@ def test_every_required_argument_is_present_at_every_call_site(
             continue
         missing = required - _flags_in(block)
         assert not missing, f"{marker} is missing required flags {sorted(missing)}"
+
+
+# Flags that name a path one step produces and a later step consumes - a real
+# pipe, where a mismatched value is a producer/consumer break, not a flag that
+# merely happens to share a name. `--policy` is deliberately excluded: every
+# step but one reads the checked-out `anchor/anchor/policy.json` directly, and
+# the one exception (`preserve.py build`) is handed a sealed *copy* of it at
+# `public/policy.json` on purpose, so its value is expected to differ.
+PIPED_PATH_FLAGS = [
+    "--scope-dir",
+    "--child-dir",
+    "--evidence-dir",
+    "--capture",
+    "--public-dir",
+    "--package",
+    "--verdict",
+    "--public-capture",
+]
+
+
+def test_a_piped_path_argument_agrees_on_its_value_at_every_step():
+    """A matching flag name is not enough if the two steps that share it
+    disagree on the path behind it. This is exactly the class of defect one
+    step short of the one already found here: `--child-dir` could just as
+    easily have been present everywhere but pointed at two different paths."""
+    occurrences: dict[str, set[str]] = {}
+    for block in _all_run_blocks():
+        for flag, value in _flag_values_in(block).items():
+            if flag in PIPED_PATH_FLAGS:
+                occurrences.setdefault(flag, set()).add(value)
+    disagreements = {
+        flag: sorted(values) for flag, values in occurrences.items() if len(values) > 1
+    }
+    assert not disagreements, f"piped flags disagree across steps: {disagreements}"
+    seen = set(occurrences)
+    missing = set(PIPED_PATH_FLAGS) - seen
+    assert not missing, f"expected piped flags not found in any step: {sorted(missing)}"
