@@ -153,6 +153,7 @@ jobs:
             --capture-result="$CAPTURE_OUTCOME" \
             --sandbox-record "$RUNNER_TEMP/anchor-private/sandbox.json" \
             --scope-dir "$RUNNER_TEMP/anchor-sandbox/candidate" \
+            --child-dir "$RUNNER_TEMP/anchor-sandbox/child" \
             --evidence-dir "$RUNNER_TEMP/anchor-sandbox/evidence" \
             --verdict public/verdict.json \
             --public-capture public/public-capture.json
