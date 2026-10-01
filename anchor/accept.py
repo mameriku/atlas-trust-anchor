@@ -16,12 +16,36 @@ verdict says about itself is believed. What is compared is:
   ---------------------------------------  -------------------------------------
   source repository (uri and numeric id)   policy anchor.repository / repository_id
   source ref                               policy anchor.ref
-  workflow ref (the signer's file@ref)     policy anchor.workflow_ref
+  subject alternative name (file@ref)      policy anchor.workflow_ref, as a URL
   workflow trigger                         policy trigger.event
   runner environment                       github-hosted
   source repository visibility at signing  public
   source digest                            the commit the verdict names as its workflow_sha
   run invocation                           the run id and attempt the verdict names
+
+Source ref and subject-alternative-name are deliberately two separate checks,
+not one: the first proves the protected ref, the second proves the exact
+workflow *file* (and, redundantly, its ref again) - collapsing them would let a
+certificate that merely shares a ref but names a different workflow file pass.
+`subjectAlternativeName` is the certificate's own X.509 SAN, the field the
+signature is actually over; `buildSignerURI` and `buildConfigURI` carry the
+same value as OIDC-claim-derived copies of it and are not checked separately.
+
+`githubWorkflowRef` is deliberately NOT one of the checks: on a real GitHub
+certificate (confirmed against a live attestation from run 36810852859, not
+assumed from documentation) it carries only the bare ref ("refs/heads/main"),
+identical to sourceRepositoryRef for a workflow that is not called as a
+reusable workflow from another repository, as this one is not. An earlier
+version of this function compared it against the full "owner/repo/path@ref"
+form of policy anchor.workflow_ref instead - a shape no real certificate ever
+has, which refused every genuine attestation this anchor could ever produce.
+It went undetected because the unit tests built their own fabricated
+certificate dictionary carrying that same wrong shape, rather than one copied
+from a real attestation's JSON. The field it actually named, and the ones it
+omitted (`subjectAlternativeName`/`buildSignerURI`/`buildConfigURI`), were
+never exercised against the real thing. `githubWorkflowName` is also
+deliberately never checked: it is the workflow's human-readable `name:` key,
+not a security-asserted identity, and must not become one.
 
 This is not a second judge and re-decides nothing about the candidate. It answers
 "did this anchor, running its protected workflow, make this file" - and only then
@@ -72,7 +96,7 @@ def check_certificate(
         "sourcerepositoryuri": f"https://github.com/{anchor['repository']}",
         "sourcerepositoryidentifier": str(anchor["repository_id"]),
         "sourcerepositoryref": anchor["ref"],
-        "githubworkflowref": anchor["workflow_ref"],
+        "subjectalternativename": f"https://github.com/{anchor['workflow_ref']}",
         "githubworkflowtrigger": policy["trigger"]["event"],
         "runnerenvironment": "github-hosted",
         "sourcerepositoryvisibilityatsigning": "public",

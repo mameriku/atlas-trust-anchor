@@ -521,11 +521,18 @@ def verdict(**anchor):
 
 
 def good_certificate(**overrides):
+    """Shaped like a real GitHub-issued certificate (see
+    `test_the_real_certificate_from_a_live_run_is_accepted` for a copy of one,
+    taken verbatim from `gh attestation verify --format json` against the live
+    attestation of run 36810852859): `subjectAlternativeName` carries the full
+    workflow file@ref as a URL, `githubWorkflowRef` carries only the bare ref
+    and is not checked, and neither is part of this fixture, since a fixture
+    is only as trustworthy as the fields it actually asserts on."""
     certificate = {
         "sourceRepositoryURI": f"https://github.com/{ANCHOR_REPO}",
         "sourceRepositoryIdentifier": str(ANCHOR_ID),
         "sourceRepositoryRef": "refs/heads/main",
-        "githubWorkflowRef": WORKFLOW_REF,
+        "subjectAlternativeName": f"https://github.com/{WORKFLOW_REF}",
         "githubWorkflowTrigger": "workflow_dispatch",
         "runnerEnvironment": "github-hosted",
         "sourceRepositoryVisibilityAtSigning": "public",
@@ -552,8 +559,8 @@ def test_certificate_field_names_are_matched_regardless_of_casing(tmp_path):
         {"sourceRepositoryIdentifier": "1"},
         {"sourceRepositoryRef": "refs/heads/feature"},
         {"sourceRepositoryRef": "refs/tags/v1"},
-        {"githubWorkflowRef": WORKFLOW_REF.replace("qualify", "other")},
-        {"githubWorkflowRef": WORKFLOW_REF.replace("heads/main", "heads/dev")},
+        {"subjectAlternativeName": f"https://github.com/{WORKFLOW_REF.replace('qualify', 'other')}"},
+        {"subjectAlternativeName": f"https://github.com/{WORKFLOW_REF.replace('heads/main', 'heads/dev')}"},
         {"githubWorkflowTrigger": "push"},
         {"githubWorkflowTrigger": "pull_request"},
         {"runnerEnvironment": "self-hosted"},
@@ -590,6 +597,123 @@ def test_the_verification_command_pins_the_signer_the_ref_and_the_runner_kind(tm
     assert "--deny-self-hosted-runners" in command and "--bundle" in command
     assert command[-2:] == ["--format", "json"]
     assert "@" not in accept_module.signer_workflow(policy(tmp_path))
+
+
+# ==========================================================================
+# the real certificate - run 36810852859, not a fabrication
+# ==========================================================================
+#
+# Every field below was copied, unedited, from `gh attestation verify
+# --format json` run against the real, GitHub-signed attestation this
+# anchor's own workflow produced for live run 36810852859 (qualifying
+# candidate d7bfc440fde3a2c066ac5ed69dd55336a5046b9d). Nothing here is a
+# secret or a private byte: a certificate's job is to be shown to anyone
+# verifying the attestation, and this one already is, inside that run's
+# own public artifact. This is the regression for the drift that mattered:
+# `good_certificate()` above was always a hand-built guess at the shape,
+# and the old `githubWorkflowRef` check was wrong in a way that guess never
+# would have caught, because the guess made the same wrong assumption the
+# code did. This fixture is not a guess.
+
+REAL_RUN_ID = "36810852859"
+REAL_WORKFLOW_SHA = "551cbe0612f56dae5bb7dab229c73ce0788f963f"
+REAL_REPOSITORY_ID = 1392950051
+
+REAL_CERTIFICATE = {
+    "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+    "subjectAlternativeName": "https://github.com/mameriku/atlas-trust-anchor/.github/workflows/qualify.yml@refs/heads/main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "githubWorkflowTrigger": "workflow_dispatch",
+    "githubWorkflowSHA": REAL_WORKFLOW_SHA,
+    "githubWorkflowName": "Qualify an Atlas candidate",
+    "githubWorkflowRepository": "mameriku/atlas-trust-anchor",
+    "githubWorkflowRef": "refs/heads/main",
+    "buildSignerURI": "https://github.com/mameriku/atlas-trust-anchor/.github/workflows/qualify.yml@refs/heads/main",
+    "buildSignerDigest": REAL_WORKFLOW_SHA,
+    "runnerEnvironment": "github-hosted",
+    "sourceRepositoryURI": "https://github.com/mameriku/atlas-trust-anchor",
+    "sourceRepositoryDigest": REAL_WORKFLOW_SHA,
+    "sourceRepositoryRef": "refs/heads/main",
+    "sourceRepositoryIdentifier": str(REAL_REPOSITORY_ID),
+    "sourceRepositoryOwnerURI": "https://github.com/mameriku",
+    "sourceRepositoryOwnerIdentifier": "136566401",
+    "buildConfigURI": "https://github.com/mameriku/atlas-trust-anchor/.github/workflows/qualify.yml@refs/heads/main",
+    "buildConfigDigest": REAL_WORKFLOW_SHA,
+    "buildTrigger": "workflow_dispatch",
+    "runInvocationURI": f"https://github.com/mameriku/atlas-trust-anchor/actions/runs/{REAL_RUN_ID}/attempts/1",
+    "sourceRepositoryVisibilityAtSigning": "public",
+}
+
+
+def real_policy(tmp_path):
+    """The real repository id, not the synthetic ANCHOR_ID the rest of this
+    file uses - a real certificate must be checked against the real policy it
+    was actually issued under."""
+    return policy_module.load(
+        make_policy(
+            tmp_path,
+            anchor={
+                "repository": ANCHOR_REPO,
+                "repository_id": REAL_REPOSITORY_ID,
+                "workflow_ref": WORKFLOW_REF,
+                "ref": "refs/heads/main",
+                "visibility": "public",
+            },
+        )
+    )
+
+
+def real_verdict(**overrides):
+    anchor = {"run_id": REAL_RUN_ID, "run_attempt": "1", "workflow_sha": REAL_WORKFLOW_SHA}
+    anchor.update(overrides)
+    return verdict(**anchor)
+
+
+def test_the_real_certificate_from_a_live_run_is_accepted(tmp_path):
+    """The exact shape a genuine attestation has - unlike `good_certificate()`,
+    not a guess. This is what refused falsely before the fix (the old code
+    compared `subjectAlternativeName`'s full file@ref value against
+    `githubWorkflowRef`, which only ever carries the bare ref) and what must
+    pass after it."""
+    assert accept_module.check_certificate(REAL_CERTIFICATE, real_policy(tmp_path), real_verdict()) == []
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"subjectAlternativeName": REAL_CERTIFICATE["subjectAlternativeName"].replace("qualify.yml", "other.yml")},
+        {"subjectAlternativeName": REAL_CERTIFICATE["subjectAlternativeName"].replace("heads/main", "heads/dev")},
+        {"sourceRepositoryRef": "refs/heads/dev"},
+        {"sourceRepositoryURI": "https://github.com/someone/else"},
+        {"sourceRepositoryIdentifier": "1"},
+        {"sourceRepositoryDigest": "f" * 40},
+        {"runInvocationURI": REAL_CERTIFICATE["runInvocationURI"].replace(REAL_RUN_ID, "1")},
+        {"runInvocationURI": REAL_CERTIFICATE["runInvocationURI"].replace("attempts/1", "attempts/2")},
+    ],
+    ids=[
+        "wrong-workflow-file",
+        "wrong-ref-in-san",
+        "wrong-source-ref",
+        "wrong-repository",
+        "wrong-repository-id",
+        "wrong-commit-sha",
+        "wrong-run-id",
+        "wrong-run-attempt",
+    ],
+)
+def test_the_real_certificate_refuses_when_a_proven_field_is_tampered(tmp_path, override):
+    certificate = {**REAL_CERTIFICATE, **override}
+    assert accept_module.check_certificate(certificate, real_policy(tmp_path), real_verdict()) == [
+        "ATTESTATION_IDENTITY_MISMATCH"
+    ]
+
+
+def test_the_real_certificate_refuses_a_verdict_claiming_a_different_run(tmp_path):
+    """Run binding the other way: a genuine certificate for run 36810852859,
+    paired with a verdict that claims to be from some other run entirely."""
+    assert accept_module.check_certificate(
+        REAL_CERTIFICATE, real_policy(tmp_path), real_verdict(run_id="99999999999")
+    ) == ["ATTESTATION_IDENTITY_MISMATCH"]
 
 
 def fake_gh(tmp_path, *, stdout="", code=0):
